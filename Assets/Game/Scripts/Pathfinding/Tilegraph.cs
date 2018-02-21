@@ -71,32 +71,41 @@ public class Tilegraph
 
         while (openSet.Count > 0)
         {
-            Node<Tile> currentNode = openSet.Dequeue();
-            if (currentNode == endNode)
-            {
-                return ConstructPath(cameFrom, currentNode);
-            }
-
-            closedSet.Add(currentNode);
-            foreach (Edge<Tile> neighbouringEdge in currentNode.Edges)
-            {
-                Node<Tile> neighbor = neighbouringEdge.Node;
-                if (closedSet.Contains(neighbor)) continue;
-
-                float movementCostToNeighbor = neighbor.Data.MovementCost * DistanceBetween(currentNode, neighbor);
-                float tentativeGScore = currentNode.GCost + movementCostToNeighbor;
-
-                if (openSet.Contains(neighbor) && tentativeGScore >= neighbor.GCost) continue;
-
-                cameFrom[neighbor] = currentNode;
-                neighbor.GCost = tentativeGScore;
-                neighbor.FCost = neighbor.GCost + CalculateHeuristicCost(neighbor, endNode);
-
-                openSet.EnqueueOrUpdate(neighbor, neighbor.FCost);
-            }
+            TilePath result = ExecutePathfindingStep(openSet, closedSet, cameFrom, endNode);
+            if (result != null) return result;
         }
 
         // At this point, we haven't found a path.
+        return null;
+    }
+
+    private static TilePath ExecutePathfindingStep(PathfindingPriorityQueue<Node<Tile>> openSet, 
+        HashSet<Node<Tile>> closedSet, Dictionary<Node<Tile>, Node<Tile>> cameFrom, Node<Tile> endNode)
+    {
+        Node<Tile> currentNode = openSet.Dequeue();
+        if (currentNode == endNode)
+        {
+            return ConstructPath(cameFrom, currentNode);
+        }
+
+        closedSet.Add(currentNode);
+        foreach (Edge<Tile> neighbouringEdge in currentNode.Edges)
+        {
+            Node<Tile> neighbor = neighbouringEdge.Node;
+            if (closedSet.Contains(neighbor)) continue;
+
+            float movementCostToNeighbor = neighbor.Data.MovementCost * DistanceBetween(currentNode, neighbor);
+            float tentativeGScore = currentNode.GCost + movementCostToNeighbor;
+
+            if (openSet.Contains(neighbor) && tentativeGScore >= neighbor.GCost) continue;
+
+            cameFrom[neighbor] = currentNode;
+            neighbor.GCost = tentativeGScore;
+            neighbor.FCost = neighbor.GCost + CalculateHeuristicCost(neighbor, endNode);
+
+            openSet.EnqueueOrUpdate(neighbor, neighbor.FCost);
+        }
+
         return null;
     }
 

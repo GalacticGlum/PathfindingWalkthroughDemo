@@ -63,7 +63,10 @@ public class WorldController : MonoBehaviour
                         UpdateTileVisuals(startTile);
                     }
 
-                    startTile = GetTileAtWorldCoordinate(Camera.main.ScreenToWorldPoint(Input.mousePosition));
+                    Tile newStartTile = GetTileUnderMouse();
+                    if (newStartTile == null) break;
+
+                    startTile = newStartTile;
                     tileGameObjects[startTile].GetComponent<SpriteRenderer>().color = Color.green;
 
                     break;
@@ -73,7 +76,10 @@ public class WorldController : MonoBehaviour
                         UpdateTileVisuals(goalTile);
                     }
 
-                    goalTile = GetTileUnderMouse();
+                    Tile newGoalTile = GetTileUnderMouse();
+                    if (newGoalTile == null) break;
+
+                    goalTile = newGoalTile;
                     tileGameObjects[goalTile].GetComponent<SpriteRenderer>().color = Color.yellow;
 
                     break;
