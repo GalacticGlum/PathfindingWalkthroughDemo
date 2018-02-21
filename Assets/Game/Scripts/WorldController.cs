@@ -81,7 +81,7 @@ public class WorldController : MonoBehaviour
                     Tile tile = GetTileUnderMouse();
                     if (tile == null) break;
 
-                    tile.Type = TileType.Wall;
+                    tile.Type = buildTileType;
 
                     UpdateTileVisuals(tile);
                     tilegraph.Regenerate(tile);
