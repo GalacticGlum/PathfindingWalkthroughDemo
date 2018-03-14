@@ -1140,6 +1140,10 @@ MonoBehaviour:
   width: 10
   height: 10
   stepThrough: 1
+  autoStepThrough: 1
+  nextStepCooldown: 0.1
+  generateRandomObstacles: 1
+  obstacleChance: 0.2
 --- !u!4 &1874256984
 Transform:
   m_ObjectHideFlags: 0

@@ -4,6 +4,8 @@ using System.Linq;
 using UnityEngine;
 using UnityEngine.EventSystems;
 
+using Random = UnityEngine.Random;
+
 /// <summary>
 /// The top-level manager for the game world.
 /// </summary>
@@ -26,6 +28,18 @@ public class WorldController : MonoBehaviour
     private int height = 10;
     [SerializeField]
     private bool stepThrough;
+    [SerializeField]
+    private bool autoStepThrough;
+    [SerializeField]
+    private float nextStepCooldown = 1;
+    private float nextStepTimer;
+    private bool doAutoStepThrough;
+
+    [SerializeField]
+    private bool generateRandomObstacles = false;
+    [Range(0, 1)]
+    [SerializeField]
+    private float obstacleChance = 0.5f;
 
     private Tile[,] tiles;
 
@@ -49,6 +63,13 @@ public class WorldController : MonoBehaviour
             for (int y = 0; y < height; y++)
             {
                 Tile tile = new Tile(new Vector2Int(x, y), TileType.Floor);
+                if (generateRandomObstacles)
+                {
+                    if (Random.value <= obstacleChance)
+                    {
+                        tile.Type = TileType.Wall;
+                    }
+                }
 
                 tiles[x, y] = tile;
                 SpawnTile(tile);
@@ -72,17 +93,11 @@ public class WorldController : MonoBehaviour
 
                     if (startTile != null)
                     {
-                        if (tilePath != null && !tilePath.Contains(startTile))
-                        {
-                            UpdateTileVisuals(startTile);
-                        }
-                        else
-                        {
-                            UpdateTileVisuals(startTile);
-                        }
+                        UpdateTileVisuals(startTile);
                     }
 
                     startTile = newStartTile;
+                    startTile.Type = TileType.Floor;
                     tileGameObjects[startTile].GetComponent<SpriteRenderer>().color = StartTileColour;
                     FindPath();
 
@@ -97,6 +112,7 @@ public class WorldController : MonoBehaviour
                     }
 
                     goalTile = newGoalTile;
+                    goalTile.Type = TileType.Floor;
                     tileGameObjects[goalTile].GetComponent<SpriteRenderer>().color = EndTileColour;
                     FindPath();
 
@@ -115,65 +131,78 @@ public class WorldController : MonoBehaviour
             }
         }
 
-        if (Input.GetKeyDown(KeyCode.Space) && stepThrough)
+        nextStepTimer -= Time.deltaTime;
+        if (Input.GetKeyDown(KeyCode.Space) && autoStepThrough)
         {
-            if (goalTile == null || startTile == null) return;
-            if (pathfinder == null)
+            doAutoStepThrough = true;
+        }
+
+        if (stepThrough && nextStepTimer <= 0 && (doAutoStepThrough || Input.GetKey(KeyCode.Space)))
+        {
+            NextStep();   
+        }
+    }
+
+    private void NextStep()
+    {
+        nextStepTimer = nextStepCooldown;
+
+        if (goalTile == null || startTile == null) return;
+        if (pathfinder == null)
+        {
+            pathfinder = new Pathfinder(tilegraph.Nodes[startTile], tilegraph.Nodes[goalTile]);
+            tilePath = null;
+        }
+
+        pathfinder.ExecutePathfindingStep();
+        if (pathfinder.HasFoundPath)
+        {
+            tilePath = pathfinder.Path;
+        }
+
+        foreach (Node<Tile> node in tilegraph.Nodes.Values)
+        {
+            GameObject tileGameObject = tileGameObjects[node.Data];
+            TileNodeDisplayContainer nodeDisplayContainer = tileGameObject.GetComponent<TileNodeDisplayContainer>();
+
+            SpriteRenderer spriteRenderer = tileGameObject.GetComponent<SpriteRenderer>();
+
+            if (tilePath != null)
             {
-                pathfinder = new Pathfinder(tilegraph.Nodes[startTile], tilegraph.Nodes[goalTile]);
-                tilePath = null;
-            }
-
-            pathfinder.ExecutePathfindingStep();
-            if (pathfinder.HasFoundPath)
-            {
-                tilePath = pathfinder.Path;
-            }
-
-            foreach (Node<Tile> node in tilegraph.Nodes.Values)
-            {
-                GameObject tileGameObject = tileGameObjects[node.Data];
-                TileNodeDisplayContainer nodeDisplayContainer = tileGameObject.GetComponent<TileNodeDisplayContainer>();
-
-                SpriteRenderer spriteRenderer = tileGameObject.GetComponent<SpriteRenderer>();
-
-                if (tilePath != null)
+                if (tilePath.Contains(node.Data))
                 {
-                    if (tilePath.Contains(node.Data))
-                    {
-                        nodeDisplayContainer.SetDisplayData(null);
-                        if (node.Data == startTile || node.Data == goalTile) continue;
+                    nodeDisplayContainer.SetDisplayData(null);
+                    if (node.Data == startTile || node.Data == goalTile) continue;
 
-                        spriteRenderer.color = Color.blue;
-                    }
-                    else
-                    {
-                        ResetTileVisuals(node, nodeDisplayContainer, spriteRenderer);
-                    }
+                    spriteRenderer.color = Color.blue;
                 }
                 else
                 {
-                    if (pathfinder.IsInOpenSet(node))
-                    {
-                        SetTileVisuals(node, nodeDisplayContainer, spriteRenderer, OpenSetTileColour);
-                    }
-                    else if (pathfinder.IsInClosedSet(node))
-                    {
-                        SetTileVisuals(node, nodeDisplayContainer, spriteRenderer, ClosedSetTileColour);
-                    }
-                    else
-                    {
-                        ResetTileVisuals(node, nodeDisplayContainer, spriteRenderer);
-                    }
+                    ResetTileVisuals(node, nodeDisplayContainer, spriteRenderer);
                 }
-
             }
-
-            if (pathfinder.HasFoundPath || pathfinder.SearchIsComplete)
+            else
             {
-                pathfinder = null;
+                if (pathfinder.IsInOpenSet(node))
+                {
+                    SetTileVisuals(node, nodeDisplayContainer, spriteRenderer, OpenSetTileColour);
+                }
+                else if (pathfinder.IsInClosedSet(node))
+                {
+                    SetTileVisuals(node, nodeDisplayContainer, spriteRenderer, ClosedSetTileColour);
+                }
+                else
+                {
+                    ResetTileVisuals(node, nodeDisplayContainer, spriteRenderer);
+                }
             }
+
         }
+
+        if (!pathfinder.HasFoundPath && !pathfinder.SearchIsComplete) return;
+
+        pathfinder = null;
+        doAutoStepThrough = false;
     }
 
     private void SetTileVisuals(Node<Tile> node, TileNodeDisplayContainer nodeDisplayContainer, SpriteRenderer spriteRenderer, Color colour)
@@ -274,6 +303,7 @@ public class WorldController : MonoBehaviour
 
         SpriteRenderer spriteRenderer = tileGameObject.GetComponent<SpriteRenderer>();
         spriteRenderer.sprite = GetSpriteForTile(tile);
+        UpdateTileVisuals(tile);
 
         tileGameObject.GetComponent<TileNodeDisplayContainer>().SetDisplayData(null);
     }
@@ -340,6 +370,6 @@ public class WorldController : MonoBehaviour
             suffix += "Right";
         }
 
-        return Resources.Load<Sprite>($"Tiles/{Enum.GetName(typeof(TileType), tile.Type) + suffix}");
+        return Resources.Load<Sprite>($"Tiles/Floor{suffix}");
     }
 }
