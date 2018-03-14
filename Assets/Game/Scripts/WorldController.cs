@@ -58,96 +58,91 @@ public class WorldController : MonoBehaviour
             switch (tileBuildMode)
             {
                 case TileBuildMode.Start:
-                    if (startTile != null)
-                    {
-                        if (tilePath != null && !tilePath.Contains(startTile))
-                        {     
-                            UpdateTileVisuals(startTile);
-                        }
-                        else
-                        {
-                            UpdateTileVisuals(startTile);
-                        }
-                    }
-
                     Tile newStartTile = GetTileUnderMouse();
                     if (newStartTile == null) break;
 
-                    startTile = newStartTile;
-                    tileGameObjects[startTile].GetComponent<SpriteRenderer>().color = Color.green;
-
-                    break;
-                case TileBuildMode.End:
-                    if (goalTile != null)
+                    if (startTile != null)
                     {
-                        if (tilePath != null && !tilePath.Contains(goalTile))
+                        if (tilePath != null && !tilePath.Contains(startTile))
                         {
-                            UpdateTileVisuals(goalTile);
+                            UpdateTileVisuals(startTile);
                         }
                         else
                         {
-                            UpdateTileVisuals(goalTile);
+                            UpdateTileVisuals(startTile);
                         }
                     }
 
+                    startTile = newStartTile;
+                    tileGameObjects[startTile].GetComponent<SpriteRenderer>().color = Color.green;
+                    FindPath();
+
+                    break;
+                case TileBuildMode.End:
                     Tile newGoalTile = GetTileUnderMouse();
                     if (newGoalTile == null) break;
 
+                    if (goalTile != null)
+                    {
+                        UpdateTileVisuals(goalTile);
+                    }
+
                     goalTile = newGoalTile;
                     tileGameObjects[goalTile].GetComponent<SpriteRenderer>().color = Color.yellow;
+                    FindPath();
 
                     break;
                 case TileBuildMode.Type:
                     Tile tile = GetTileUnderMouse();
-                    if (tile == null) break;
+                    if (tile == null || tile == startTile || tile == goalTile) break;
 
                     tile.Type = buildTileType;
 
                     UpdateTileVisuals(tile);
                     tilegraph.Regenerate(tile);
+                    FindPath();
 
                     break;
-            }        
-        }
-
-        if (Input.GetMouseButtonDown(1))
-        {
-            if (tileBuildMode == TileBuildMode.Type)
-            {
-                Tile tile = GetTileUnderMouse();
-                tile.Type = TileType.Floor;
-
-                UpdateTileVisuals(tile);
-                tilegraph.Regenerate(tile);
             }
         }
+    }
 
-        if (!Input.GetKeyDown(KeyCode.Space)) return;
+    private void FindPath()
+    {
+        if (goalTile == null || startTile == null)
         {
-            if (goalTile == null || startTile == null) return;
-            if (tilePath != null)
-            {
-                foreach (Tile tile in tilePath)
-                {
-                    if (tile == startTile || tile == goalTile) continue;
-                    UpdateTileVisuals(tile);
-                }
-
-                tilePath = null;
-            }
-
-            tilePath = tilegraph.FindPath(startTile, goalTile);
-            if (tilePath == null)
-            {
-                Debug.LogError("WorldController::Update: could not find path from start to end tile.");
-                return;
-            }
-
+            if (tilePath == null) return;
             foreach (Tile tile in tilePath)
             {
-                if(tile == startTile || tile == goalTile) continue;
-                tileGameObjects[tile].GetComponent<SpriteRenderer>().color = Color.blue;
+                if (tile == startTile || tile == goalTile) continue;
+                tileGameObjects[tile].GetComponent<SpriteRenderer>().color = Color.white;
             }
+
+            return;
+        }
+
+        if (tilePath != null)
+        {
+            foreach (Tile tile in tilePath)
+            {
+                if (tile == startTile || tile == goalTile) continue;
+                UpdateTileVisuals(tile);
+            }
+
+            tilePath = null;
+        }
+
+        tilePath = tilegraph.FindPath(startTile, goalTile);
+        if (tilePath == null)
+        {
+            Debug.LogError("WorldController::Update: could not find path from start to end tile.");
+            return;
+        }
+
+        foreach (Tile tile in tilePath)
+        {
+            if (tile == startTile || tile == goalTile) continue;
+            tileGameObjects[tile].GetComponent<SpriteRenderer>().color = Color.blue;
         }
     }
 
@@ -178,7 +173,7 @@ public class WorldController : MonoBehaviour
         tileGameObject.transform.SetParent(tileParent.transform);
 
         SpriteRenderer spriteRenderer = tileGameObject.AddComponent<SpriteRenderer>();
-        spriteRenderer.sprite = GetSpriteForTileType(tile.Type);
+        spriteRenderer.sprite = GetSpriteForTile(tile);
     }
 
     public Tile GetTileAt(int x, int y)
@@ -230,6 +225,19 @@ public class WorldController : MonoBehaviour
     public void SetTileBuildMode(int mode) => tileBuildMode = (TileBuildMode)mode;
     public void SetPlaceTileType(int type) => buildTileType = (TileType)type;
 
-    private static Sprite GetSpriteForTileType(TileType type) => 
-        Resources.Load<Sprite>($"Tiles/{Enum.GetName(typeof(TileType), type)}");
+    private Sprite GetSpriteForTile(Tile tile)
+    {
+        string suffix = "_";
+        if (tile.Position.y + 1 >= height)
+        {
+            suffix += "Top";
+        }
+
+        if (tile.Position.x + 1 >= width)
+        {
+            suffix += "Right";
+        }
+
+        return Resources.Load<Sprite>($"Tiles/{Enum.GetName(typeof(TileType), tile.Type) + suffix}");
+    }
 }

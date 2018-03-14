@@ -611,7 +611,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   worldController: {fileID: 1874256983}
   zoomLerp: 0
-  zoomSensitivity: 2
+  zoomSensitivity: 1
 --- !u!1 &644961324
 GameObject:
   m_ObjectHideFlags: 0
@@ -1137,8 +1137,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1bb75efae531458e9618089f0170a22b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  width: 50
-  height: 50
+  width: 10
+  height: 10
 --- !u!4 &1874256984
 Transform:
   m_ObjectHideFlags: 0

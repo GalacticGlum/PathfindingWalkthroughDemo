@@ -31,6 +31,9 @@ public class Tile
         Type = type;
     }
 
+    /// <summary>
+    /// Calculate the movement cost of a tile based on it's type.
+    /// </summary>
     private float CalculateMovementCost()
     {
         switch (Type)
