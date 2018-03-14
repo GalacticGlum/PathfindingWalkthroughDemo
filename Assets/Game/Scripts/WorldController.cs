@@ -58,9 +58,16 @@ public class WorldController : MonoBehaviour
             switch (tileBuildMode)
             {
                 case TileBuildMode.Start:
-                    if (startTile != null && !tilePath.Contains(startTile))
+                    if (startTile != null)
                     {
-                        UpdateTileVisuals(startTile);
+                        if (tilePath != null && !tilePath.Contains(startTile))
+                        {     
+                            UpdateTileVisuals(startTile);
+                        }
+                        else
+                        {
+                            UpdateTileVisuals(startTile);
+                        }
                     }
 
                     Tile newStartTile = GetTileUnderMouse();
@@ -71,9 +78,16 @@ public class WorldController : MonoBehaviour
 
                     break;
                 case TileBuildMode.End:
-                    if (goalTile != null && !tilePath.Contains(goalTile))
+                    if (goalTile != null)
                     {
-                        UpdateTileVisuals(goalTile);
+                        if (tilePath != null && !tilePath.Contains(goalTile))
+                        {
+                            UpdateTileVisuals(goalTile);
+                        }
+                        else
+                        {
+                            UpdateTileVisuals(goalTile);
+                        }
                     }
 
                     Tile newGoalTile = GetTileUnderMouse();
@@ -115,6 +129,7 @@ public class WorldController : MonoBehaviour
             {
                 foreach (Tile tile in tilePath)
                 {
+                    if (tile == startTile || tile == goalTile) continue;
                     UpdateTileVisuals(tile);
                 }
 
@@ -122,8 +137,15 @@ public class WorldController : MonoBehaviour
             }
 
             tilePath = tilegraph.FindPath(startTile, goalTile);
+            if (tilePath == null)
+            {
+                Debug.LogError("WorldController::Update: could not find path from start to end tile.");
+                return;
+            }
+
             foreach (Tile tile in tilePath)
             {
+                if(tile == startTile || tile == goalTile) continue;
                 tileGameObjects[tile].GetComponent<SpriteRenderer>().color = Color.blue;
             }
         }
