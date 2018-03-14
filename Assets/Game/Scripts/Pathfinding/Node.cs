@@ -14,14 +14,19 @@ public class Node<T>
     public Edge<T>[] Edges { get; set; }
 
     /// <summary>
-    /// The H cost of this <see cref="Node{T}"/>.
+    /// The G cost of this <see cref="Node{T}"/>.
     /// </summary>
     public float GCost { get; set; }
+    
+    /// <summary>
+    /// The H cost of this <see cref="Node{T}"/>
+    /// </summary>
+    public float HCost { get; set; }
 
     /// <summary>
     /// The F cost of this <see cref="Node{T}"/>.
     /// </summary>
-    public float FCost { get; set; }
+    public float FCost => HCost + GCost;
 
     /// <summary>
     /// Initializes this <see cref="Node{T}"/>.

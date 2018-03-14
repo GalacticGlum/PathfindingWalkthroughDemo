@@ -45,7 +45,6 @@ public class Tilegraph
     public TilePath FindPath(Tile startTile, Tile endTile)
     {
         if (startTile == null || endTile == null) return null;
-
         if (!Nodes.ContainsKey(startTile))
         {
             Debug.LogError("Tilegraph::FindPath: The starting tile (param: Tile startTile) isn't in the list of nodes!");
@@ -60,53 +59,9 @@ public class Tilegraph
         }
 
         Node<Tile> endNode = Nodes[endTile];
-        HashSet<Node<Tile>> closedSet = new HashSet<Node<Tile>>();
-        PathfindingPriorityQueue<Node<Tile>> openSet = new PathfindingPriorityQueue<Node<Tile>>(1);
-        openSet.Enqueue(startNode, 0);
 
-        Dictionary<Node<Tile>, Node<Tile>> cameFrom = new Dictionary<Node<Tile>, Node<Tile>>();
-
-        startNode.GCost = 0;
-        startNode.FCost = CalculateHeuristicCost(startNode, endNode);
-
-        while (openSet.Count > 0)
-        {
-            TilePath result = ExecutePathfindingStep(openSet, closedSet, cameFrom, endNode);
-            if (result != null) return result;
-        }
-
-        // At this point, we haven't found a path.
-        return null;
-    }
-
-    private static TilePath ExecutePathfindingStep(PathfindingPriorityQueue<Node<Tile>> openSet, 
-        HashSet<Node<Tile>> closedSet, Dictionary<Node<Tile>, Node<Tile>> cameFrom, Node<Tile> endNode)
-    {
-        Node<Tile> currentNode = openSet.Dequeue();
-        if (currentNode == endNode)
-        {
-            return ConstructPath(cameFrom, currentNode);
-        }
-
-        closedSet.Add(currentNode);
-        foreach (Edge<Tile> neighbouringEdge in currentNode.Edges)
-        {
-            Node<Tile> neighbor = neighbouringEdge.Node;
-            if (closedSet.Contains(neighbor)) continue;
-
-            float movementCostToNeighbor = neighbor.Data.MovementCost * DistanceBetween(currentNode, neighbor);
-            float tentativeGScore = currentNode.GCost + movementCostToNeighbor;
-
-            if (openSet.Contains(neighbor) && tentativeGScore >= neighbor.GCost) continue;
-
-            cameFrom[neighbor] = currentNode;
-            neighbor.GCost = tentativeGScore;
-            neighbor.FCost = neighbor.GCost + CalculateHeuristicCost(neighbor, endNode);
-
-            openSet.EnqueueOrUpdate(neighbor, neighbor.FCost);
-        }
-
-        return null;
+        Pathfinder pathfinder = new Pathfinder(startNode, endNode);
+        return pathfinder.FindPath();
     }
 
     private void GenerateEdges(Node<Tile> node)
@@ -122,42 +77,5 @@ public class Tilegraph
         if (worldController.GetTileAt(current.Position.x - delta.x, current.Position.y).MovementCost == 0) return true;
 
         return worldController.GetTileAt(current.Position.x, current.Position.y - delta.y).MovementCost == 0;
-    }
-
-    private static float CalculateHeuristicCost(Node<Tile> a, Node<Tile> b)
-    {
-        if (b == null) return 0;
-
-        Vector2Int delta = a.Data.Position - b.Data.Position;
-        return Mathf.Sqrt(Mathf.Pow(delta.x, 2) + Mathf.Pow(delta.y, 2));
-    }
-
-    private static float DistanceBetween(Node<Tile> a, Node<Tile> b)
-    {
-        Vector2Int delta = a.Data.Position - b.Data.Position;
-        if (Mathf.Abs(delta.x) + Mathf.Abs(delta.y) == 1) return 1;
-
-        // Diagonal neighbours have a distance of 1.41421356237 (square root of 2)
-        if (Mathf.Abs(delta.x) == 1 && Mathf.Abs(delta.x) == 1) return 1.41421356237f;
-
-        // Otherwise, do the actual math.
-        return Mathf.Sqrt(Mathf.Pow(delta.x, 2) + Mathf.Pow(delta.y, 2));
-    }
-
-    private static TilePath ConstructPath(IDictionary<Node<Tile>, Node<Tile>> cameFrom, Node<Tile> current)
-    {
-        // At this point Current IS the goal.
-        // What we want to do is walk backwards through the came from map, 
-        // until we reach the our starting node.
-        Queue<Tile> totalPath = new Queue<Tile>();
-        totalPath.Enqueue(current.Data);
-
-        while (cameFrom.ContainsKey(current))
-        {
-            current = cameFrom[current];
-            totalPath.Enqueue(current.Data);
-        }
-
-        return new TilePath(totalPath.Reverse());
     }
 }

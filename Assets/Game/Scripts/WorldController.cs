@@ -9,6 +9,11 @@ using UnityEngine.EventSystems;
 /// </summary>
 public class WorldController : MonoBehaviour
 {
+    private static readonly Color StartTileColour = new Color(0.2f, 0.6f, 1);
+    private static readonly Color EndTileColour = Color.yellow;
+    private static readonly Color OpenSetTileColour = new Color(0.5f, 1, 0.3f);
+    private static readonly Color ClosedSetTileColour = new Color(0.9f, 0.3f, 0.3f);
+
     public int Width => width;
     public int Height => height;
 
@@ -19,6 +24,8 @@ public class WorldController : MonoBehaviour
     private int width = 10;
     [SerializeField]
     private int height = 10;
+    [SerializeField]
+    private bool stepThrough;
 
     private Tile[,] tiles;
 
@@ -27,6 +34,7 @@ public class WorldController : MonoBehaviour
 
     private TilePath tilePath;
     private Tilegraph tilegraph;
+    private Pathfinder pathfinder;
 
     private GameObject tileParent;
     private Dictionary<Tile, GameObject> tileGameObjects;
@@ -47,6 +55,7 @@ public class WorldController : MonoBehaviour
             }
         }
 
+        Camera.main.orthographicSize = width / 2f + 0.5f;
         Camera.main.transform.position = new Vector3(width / 2f - 0.5f, height / 2f - 0.5f);
         tilegraph = new Tilegraph(this);
     }
@@ -74,7 +83,7 @@ public class WorldController : MonoBehaviour
                     }
 
                     startTile = newStartTile;
-                    tileGameObjects[startTile].GetComponent<SpriteRenderer>().color = Color.green;
+                    tileGameObjects[startTile].GetComponent<SpriteRenderer>().color = StartTileColour;
                     FindPath();
 
                     break;
@@ -88,7 +97,7 @@ public class WorldController : MonoBehaviour
                     }
 
                     goalTile = newGoalTile;
-                    tileGameObjects[goalTile].GetComponent<SpriteRenderer>().color = Color.yellow;
+                    tileGameObjects[goalTile].GetComponent<SpriteRenderer>().color = EndTileColour;
                     FindPath();
 
                     break;
@@ -105,10 +114,99 @@ public class WorldController : MonoBehaviour
                     break;
             }
         }
+
+        if (Input.GetKeyDown(KeyCode.Space) && stepThrough)
+        {
+            if (goalTile == null || startTile == null) return;
+            if (pathfinder == null)
+            {
+                pathfinder = new Pathfinder(tilegraph.Nodes[startTile], tilegraph.Nodes[goalTile]);
+                tilePath = null;
+            }
+
+            pathfinder.ExecutePathfindingStep();
+            if (pathfinder.HasFoundPath)
+            {
+                tilePath = pathfinder.Path;
+            }
+
+            foreach (Node<Tile> node in tilegraph.Nodes.Values)
+            {
+                GameObject tileGameObject = tileGameObjects[node.Data];
+                TileNodeDisplayContainer nodeDisplayContainer = tileGameObject.GetComponent<TileNodeDisplayContainer>();
+
+                SpriteRenderer spriteRenderer = tileGameObject.GetComponent<SpriteRenderer>();
+
+                if (tilePath != null)
+                {
+                    if (tilePath.Contains(node.Data))
+                    {
+                        nodeDisplayContainer.SetDisplayData(null);
+                        if (node.Data == startTile || node.Data == goalTile) continue;
+
+                        spriteRenderer.color = Color.blue;
+                    }
+                    else
+                    {
+                        ResetTileVisuals(node, nodeDisplayContainer, spriteRenderer);
+                    }
+                }
+                else
+                {
+                    if (pathfinder.IsInOpenSet(node))
+                    {
+                        SetTileVisuals(node, nodeDisplayContainer, spriteRenderer, OpenSetTileColour);
+                    }
+                    else if (pathfinder.IsInClosedSet(node))
+                    {
+                        SetTileVisuals(node, nodeDisplayContainer, spriteRenderer, ClosedSetTileColour);
+                    }
+                    else
+                    {
+                        ResetTileVisuals(node, nodeDisplayContainer, spriteRenderer);
+                    }
+                }
+
+            }
+
+            if (pathfinder.HasFoundPath || pathfinder.SearchIsComplete)
+            {
+                pathfinder = null;
+            }
+        }
+    }
+
+    private void SetTileVisuals(Node<Tile> node, TileNodeDisplayContainer nodeDisplayContainer, SpriteRenderer spriteRenderer, Color colour)
+    {
+        if (node.Data != startTile && node.Data != goalTile)
+        {
+            spriteRenderer.color = colour;
+        }
+
+        nodeDisplayContainer.SetDisplayData(node);
+    }
+
+    private void ResetTileVisuals(Node<Tile> node, TileNodeDisplayContainer nodeDisplayContainer, SpriteRenderer spriteRenderer)
+    {
+        if (node.Data == startTile)
+        {
+            spriteRenderer.color = StartTileColour;
+        }
+        else if (node.Data == goalTile)
+        {
+            spriteRenderer.color = EndTileColour;
+        }
+        else
+        {
+            UpdateTileVisuals(node.Data);
+        }
+
+        nodeDisplayContainer.SetDisplayData(null);
     }
 
     private void FindPath()
     {
+        if (stepThrough) return;
         if (goalTile == null || startTile == null)
         {
             if (tilePath == null) return;
@@ -167,13 +265,17 @@ public class WorldController : MonoBehaviour
             tileParent = new GameObject("Tiles");
         }
 
-        GameObject tileGameObject = new GameObject($"Tile ({tile.Position.x}, {tile.Position.y})");
-        tileGameObjects.Add(tile, tileGameObject);
+        GameObject tileGameObject = Instantiate(Resources.Load<GameObject>("Prefabs/Tile"));
+        tileGameObject.name = $"Tile ({tile.Position.x}, {tile.Position.y})";
         tileGameObject.transform.position = new Vector3(tile.Position.x, tile.Position.y, 1);
         tileGameObject.transform.SetParent(tileParent.transform);
 
-        SpriteRenderer spriteRenderer = tileGameObject.AddComponent<SpriteRenderer>();
+        tileGameObjects.Add(tile, tileGameObject);
+
+        SpriteRenderer spriteRenderer = tileGameObject.GetComponent<SpriteRenderer>();
         spriteRenderer.sprite = GetSpriteForTile(tile);
+
+        tileGameObject.GetComponent<TileNodeDisplayContainer>().SetDisplayData(null);
     }
 
     public Tile GetTileAt(int x, int y)

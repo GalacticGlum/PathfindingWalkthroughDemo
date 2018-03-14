@@ -21,9 +21,9 @@ public class CameraController : MonoBehaviour
 
     private float zoomTarget;
 
-    private void Start()
+    private void Awake()
     {
-        Zoom(0);
+        Zoom(-zoomSensitivity);
     }
 
     private void Update()

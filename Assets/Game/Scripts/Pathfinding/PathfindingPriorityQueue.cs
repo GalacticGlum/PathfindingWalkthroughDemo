@@ -122,4 +122,15 @@ public class PathfindingPriorityQueue<T>
     /// </summary>
     /// <value>The count.</value>
     public int Count => _underlyingQueue.Count;
+
+    public List<T> ToList()
+    {
+        List<T> result = new List<T>(Count);
+        foreach (WrappedNode wrappedNode in _underlyingQueue)
+        {
+            result.Add(wrappedNode.data);   
+        }
+
+        return result;
+    }
 }
