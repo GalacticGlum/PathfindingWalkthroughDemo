@@ -1,9 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Drawing;
+using System.IO;
 using System.Linq;
+using System.Threading;
 using UnityEngine;
 using UnityEngine.EventSystems;
-
+using Color = UnityEngine.Color;
 using Random = UnityEngine.Random;
 
 /// <summary>
@@ -16,12 +19,19 @@ public class WorldController : MonoBehaviour
     private static readonly Color OpenSetTileColour = new Color(0.5f, 1, 0.3f);
     private static readonly Color ClosedSetTileColour = new Color(0.9f, 0.3f, 0.3f);
 
+    private static readonly Vector2Int NorthDirection = new Vector2Int(0, 1);
+    private static readonly Vector2Int SouthDirection = new Vector2Int(0, -1);
+    private static readonly Vector2Int EastDirection = new Vector2Int(1, 0);
+    private static readonly Vector2Int WestDirection = new Vector2Int(-1, 0);
+
     public int Width => width;
     public int Height => height;
 
     private Tile startTile;
     private Tile goalTile;
 
+    [SerializeField]
+    private CameraController cameraController;
     [SerializeField]
     private int width = 10;
     [SerializeField]
@@ -34,12 +44,17 @@ public class WorldController : MonoBehaviour
     private float nextStepCooldown = 1;
     private float nextStepTimer;
     private bool doAutoStepThrough;
+    [SerializeField]
+    private int autoStepsPerFrame = 1;
 
     [SerializeField]
-    private bool generateRandomObstacles = false;
+    private bool generateRandomObstacles;
     [Range(0, 1)]
     [SerializeField]
     private float obstacleChance = 0.5f;
+    [SerializeField]
+    private bool generateMaze = true;
+    private HashSet<Vector2Int> mazeGenerationVisited;
 
     private Tile[,] tiles;
 
@@ -52,6 +67,7 @@ public class WorldController : MonoBehaviour
 
     private GameObject tileParent;
     private Dictionary<Tile, GameObject> tileGameObjects;
+    private int stepCount;
 
     private void Start()
     {
@@ -63,9 +79,18 @@ public class WorldController : MonoBehaviour
             for (int y = 0; y < height; y++)
             {
                 Tile tile = new Tile(new Vector2Int(x, y), TileType.Floor);
-                if (generateRandomObstacles)
+                if (generateRandomObstacles && Random.value <= obstacleChance)
                 {
-                    if (Random.value <= obstacleChance)
+                    tile.Type = TileType.Wall;
+                }
+
+                if (generateMaze)
+                {
+                    if (x % 2 != 0 && y % 2 != 0)
+                    {
+                        tile.Type = TileType.Floor;
+                    }
+                    else
                     {
                         tile.Type = TileType.Wall;
                     }
@@ -76,20 +101,68 @@ public class WorldController : MonoBehaviour
             }
         }
 
-        Camera.main.orthographicSize = width / 2f + 0.5f;
-        Camera.main.transform.position = new Vector3(width / 2f - 0.5f, height / 2f - 0.5f);
+        GenerateMaze();    
         tilegraph = new Tilegraph(this);
+
+        StaticBatchingUtility.Combine(tileParent);
     }
 
+    private void GenerateMaze(int x = 0, int y = 0)
+    {
+        if (!generateMaze) return;
+
+        if (mazeGenerationVisited == null)
+        {
+            mazeGenerationVisited = new HashSet<Vector2Int>();
+        }
+
+        Vector2Int[] directions =
+        {
+            NorthDirection,
+            EastDirection,
+            SouthDirection,
+            WestDirection
+        };
+
+        directions.Shuffle();
+
+        mazeGenerationVisited.Add(new Vector2Int(x, y));
+        foreach (Vector2Int direction in directions)
+        {
+            Vector2Int position = new Vector2Int(x, y) + direction * new Vector2Int(2, 2);
+            bool inRange = position.y >= 0 && position.y < height && position.x >= 0 && position.x < width;
+            if (inRange && !mazeGenerationVisited.Contains(position))
+            {
+                Tile neighbour = GetTileAt(x + direction.x, y + direction.y);
+                if (neighbour != null)
+                {
+                    neighbour.Type = TileType.Floor;
+                    UpdateTileVisuals(neighbour);
+                }
+
+                Tile oppositeNeighbour = GetTileAt(x + direction.x * -1, y + direction.y * -1);
+                if (oppositeNeighbour != null)
+                {
+                    oppositeNeighbour.Type = TileType.Floor;
+                    UpdateTileVisuals(oppositeNeighbour);
+                }
+
+                GenerateMaze(position.x, position.y);
+            }
+        }
+    }
+    
     private void Update()
     {
-        if (Input.GetMouseButtonDown(0) && !EventSystem.current.IsPointerOverGameObject())
+        UpdateTiles();
+
+        if (Input.GetMouseButton(0) && !EventSystem.current.IsPointerOverGameObject())
         {
             switch (tileBuildMode)
             {
                 case TileBuildMode.Start:
                     Tile newStartTile = GetTileUnderMouse();
-                    if (newStartTile == null) break;
+                    if (newStartTile == null || newStartTile.Type != TileType.Floor) break;
 
                     if (startTile != null)
                     {
@@ -97,14 +170,13 @@ public class WorldController : MonoBehaviour
                     }
 
                     startTile = newStartTile;
-                    startTile.Type = TileType.Floor;
                     tileGameObjects[startTile].GetComponent<SpriteRenderer>().color = StartTileColour;
                     FindPath();
 
                     break;
                 case TileBuildMode.End:
                     Tile newGoalTile = GetTileUnderMouse();
-                    if (newGoalTile == null) break;
+                    if (newGoalTile == null || newGoalTile.Type != TileType.Floor) break;
 
                     if (goalTile != null)
                     {
@@ -112,7 +184,6 @@ public class WorldController : MonoBehaviour
                     }
 
                     goalTile = newGoalTile;
-                    goalTile.Type = TileType.Floor;
                     tileGameObjects[goalTile].GetComponent<SpriteRenderer>().color = EndTileColour;
                     FindPath();
 
@@ -134,24 +205,44 @@ public class WorldController : MonoBehaviour
         nextStepTimer -= Time.deltaTime;
         if (Input.GetKeyDown(KeyCode.Space) && autoStepThrough)
         {
-            doAutoStepThrough = true;
+            doAutoStepThrough = !doAutoStepThrough;
         }
 
         if (stepThrough && nextStepTimer <= 0 && (doAutoStepThrough || Input.GetKey(KeyCode.Space)))
         {
-            NextStep();   
+            NextStep(doAutoStepThrough ? autoStepsPerFrame : 0);
         }
     }
 
-    private void NextStep()
+    private void UpdateTiles()
     {
+        for (int x = 0; x < width; x++)
+        {
+            for (int y = 0; y < height; y++)
+            {
+                Tile tile = GetTileAt(x, y);
+                GameObject tileGameObject = tileGameObjects[tile];
+                tileGameObject.SetActive(cameraController.FrustrumOrthographicBounds.Contains(new Vector2(x, y)));
+            }
+        }
+    }
+
+    private void NextStep(int count = 0)
+    {
+        stepCount++;
         nextStepTimer = nextStepCooldown;
 
-        if (goalTile == null || startTile == null) return;
+        if (goalTile == null || startTile == null)
+        {
+            doAutoStepThrough = false;
+            return;
+        }
+
         if (pathfinder == null)
         {
             pathfinder = new Pathfinder(tilegraph.Nodes[startTile], tilegraph.Nodes[goalTile]);
             tilePath = null;
+            stepCount = 0;
         }
 
         pathfinder.ExecutePathfindingStep();
@@ -163,59 +254,68 @@ public class WorldController : MonoBehaviour
         foreach (Node<Tile> node in tilegraph.Nodes.Values)
         {
             GameObject tileGameObject = tileGameObjects[node.Data];
-            TileNodeDisplayContainer nodeDisplayContainer = tileGameObject.GetComponent<TileNodeDisplayContainer>();
-
+            TileInstance tileInstance = tileGameObject.GetComponent<TileInstance>();
             SpriteRenderer spriteRenderer = tileGameObject.GetComponent<SpriteRenderer>();
 
             if (tilePath != null)
             {
                 if (tilePath.Contains(node.Data))
                 {
-                    nodeDisplayContainer.SetDisplayData(null);
+                    tileInstance.Node = null;
                     if (node.Data == startTile || node.Data == goalTile) continue;
 
                     spriteRenderer.color = Color.blue;
                 }
                 else
                 {
-                    ResetTileVisuals(node, nodeDisplayContainer, spriteRenderer);
+                    ResetTileVisuals(node, tileInstance, spriteRenderer);
                 }
             }
             else
             {
                 if (pathfinder.IsInOpenSet(node))
                 {
-                    SetTileVisuals(node, nodeDisplayContainer, spriteRenderer, OpenSetTileColour);
+                    SetTileVisuals(node, tileInstance, spriteRenderer, OpenSetTileColour);
                 }
                 else if (pathfinder.IsInClosedSet(node))
                 {
-                    SetTileVisuals(node, nodeDisplayContainer, spriteRenderer, ClosedSetTileColour);
+                    SetTileVisuals(node, tileInstance, spriteRenderer, ClosedSetTileColour);
                 }
                 else
                 {
-                    ResetTileVisuals(node, nodeDisplayContainer, spriteRenderer);
+                    ResetTileVisuals(node, tileInstance, spriteRenderer);
                 }
             }
 
         }
 
-        if (!pathfinder.HasFoundPath && !pathfinder.SearchIsComplete) return;
+        if (!pathfinder.HasFoundPath && !pathfinder.SearchIsComplete)
+        {
+            if (doAutoStepThrough && count > 0)
+            {
+                NextStep(--count);
+            }
+
+            return;
+        }
 
         pathfinder = null;
         doAutoStepThrough = false;
+
+        Debug.Log($"Found path in {stepCount} steps");
     }
 
-    private void SetTileVisuals(Node<Tile> node, TileNodeDisplayContainer nodeDisplayContainer, SpriteRenderer spriteRenderer, Color colour)
+    private void SetTileVisuals(Node<Tile> node, TileInstance tileInstance, SpriteRenderer spriteRenderer, Color colour)
     {
         if (node.Data != startTile && node.Data != goalTile)
         {
             spriteRenderer.color = colour;
         }
 
-        nodeDisplayContainer.SetDisplayData(node);
+        tileInstance.Node = node;
     }
 
-    private void ResetTileVisuals(Node<Tile> node, TileNodeDisplayContainer nodeDisplayContainer, SpriteRenderer spriteRenderer)
+    private void ResetTileVisuals(Node<Tile> node, TileInstance tileInstance, SpriteRenderer spriteRenderer)
     {
         if (node.Data == startTile)
         {
@@ -230,7 +330,7 @@ public class WorldController : MonoBehaviour
             UpdateTileVisuals(node.Data);
         }
 
-        nodeDisplayContainer.SetDisplayData(null);
+        tileInstance.Node = null;
     }
 
     private void FindPath()
@@ -305,7 +405,8 @@ public class WorldController : MonoBehaviour
         spriteRenderer.sprite = GetSpriteForTile(tile);
         UpdateTileVisuals(tile);
 
-        tileGameObject.GetComponent<TileNodeDisplayContainer>().SetDisplayData(null);
+        TileInstance displayContainer = tileGameObject.GetComponent<TileInstance>();
+        displayContainer.Initialize(null, cameraController);
     }
 
     public Tile GetTileAt(int x, int y)
@@ -314,7 +415,7 @@ public class WorldController : MonoBehaviour
         return tiles[x, y];
     }
 
-    public Tile GetTileUnderMouse() => GetTileAtWorldCoordinate(Camera.main.ScreenToWorldPoint(Input.mousePosition));
+    public Tile GetTileUnderMouse() => GetTileAtWorldCoordinate(cameraController.Camera.ScreenToWorldPoint(Input.mousePosition));
 
     public Tile GetTileAtWorldCoordinate(Vector3 coordinates)
     {

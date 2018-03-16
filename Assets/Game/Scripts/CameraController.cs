@@ -1,33 +1,119 @@
-﻿using UnityEngine;
+﻿using System;
+using UnityEngine;
 using UnityEngine.EventSystems;
 
+public class CameraControllerEventArgs : EventArgs
+{
+    public CameraController CameraController { get; }
+    public CameraControllerEventArgs(CameraController cameraController)
+    {
+        CameraController = cameraController;
+    }
+}
+
+public class CameraControllerZoomedEventArgs : CameraControllerEventArgs
+{
+    public float Amount { get; }
+    public float Direction { get; }
+    public bool ZoomedIn { get; }
+    public bool ZoomedOut { get; }
+
+    public CameraControllerZoomedEventArgs(CameraController cameraController, float amount, float direction) : base(cameraController)
+    {
+        Amount = amount;
+        Direction = direction;
+
+        ZoomedIn = direction > 0;
+        ZoomedOut = direction < 0;
+    }
+}
+
+[RequireComponent(typeof(Camera))]
 public class CameraController : MonoBehaviour
 {
+    private bool canControlCamera = true;
+    public bool CanControlCamera
+    {
+        get { return canControlCamera; }
+        set
+        {
+            if (value == canControlCamera) return;
+            canControlCamera = value;
+
+            ControlStateChanged?.Invoke(this, new CameraControllerEventArgs(this));
+        }
+    }
+
+    /// <summary>
+    /// The bounds containing all the objects our camera can see.
+    /// </summary>
+    public Bounds FrustrumOrthographicBounds { get; private set; }
+    public Bounds OrthographicBounds { get; private set; }
+    public Camera Camera { get; private set; }
+
+    public event EventHandler<CameraControllerEventArgs> ControlStateChanged;
+    public event EventHandler<CameraControllerZoomedEventArgs> Zoomed;
+
+    private const float PanningThreshold = 0.015f;
+
     [SerializeField]
     private WorldController worldController;
-
-    private bool isPanning;
-
-    private const float panningThreshold = 0.015f;
-    private Vector3 panningMouseStart = Vector3.zero;
-
-    private Vector3 lastFramePosition;
-    private Vector3 currentFramePosition;
-
     [SerializeField]
     private float zoomLerp = 3;
     [SerializeField]
     private float zoomSensitivity = 3;
 
+    private bool isPanning;
+    private Vector3 panningMouseStart = Vector3.zero;
+    private Vector3 lastFramePosition;
+    private Vector3 currentFramePosition;
+
+    private float maximumZoom;
     private float zoomTarget;
+
+    private Vector2 centrePosition;
+    private Vector2 previousCameraPosition;
+    private float previousCameraZoom;
 
     private void Awake()
     {
-        Zoom(-zoomSensitivity);
+        Camera = GetComponent<Camera>();
+
+        maximumZoom = Mathf.Ceil(worldController.Width / 2f + 0.5f);
+        Zoom(-maximumZoom / zoomSensitivity);
+
+        Camera.orthographicSize = maximumZoom;
+
+        centrePosition = new Vector3(worldController.Width / 2f - 0.5f, worldController.Height / 2f - 0.5f);
+        Camera.transform.position = centrePosition;
+
+        UpdateOrthographicBounds();
     }
 
     private void Update()
     {
+        if (Input.GetKeyDown(KeyCode.F1))
+        {
+            CanControlCamera = !CanControlCamera;
+            if (!CanControlCamera)
+            {
+                previousCameraPosition = Camera.transform.position;
+                previousCameraZoom = Camera.orthographicSize;
+
+                Camera.transform.position = centrePosition;
+                Camera.orthographicSize = maximumZoom;
+            }
+            else
+            {
+                Camera.transform.position = previousCameraPosition;
+                Camera.orthographicSize = previousCameraZoom;
+            }
+
+            UpdateOrthographicBounds();
+        }
+
+        if (!CanControlCamera) return;
+
         UpdateCurrentFramePosition();
         UpdateCameraMovement();
         UpdateCameraZoom();
@@ -36,13 +122,13 @@ public class CameraController : MonoBehaviour
 
     private void UpdateCurrentFramePosition()
     {
-        currentFramePosition = Camera.main.ScreenToWorldPoint(Input.mousePosition);
+        currentFramePosition = Camera.ScreenToWorldPoint(Input.mousePosition);
         currentFramePosition.z = 0;
     }
 
     private void StoreFramePosition()
     {
-        lastFramePosition = Camera.main.ScreenToWorldPoint(Input.mousePosition);
+        lastFramePosition = Camera.ScreenToWorldPoint(Input.mousePosition);
         lastFramePosition.z = 0;
     }
 
@@ -50,16 +136,16 @@ public class CameraController : MonoBehaviour
     {
         if (Input.GetMouseButtonDown(1) || Input.GetMouseButtonDown(2))
         {
-            panningMouseStart = Camera.main.ScreenToWorldPoint(Input.mousePosition);
+            panningMouseStart = Camera.ScreenToWorldPoint(Input.mousePosition);
             panningMouseStart.z = 0;
         }
 
         if (!isPanning)
         {
-            Vector3 currentMousePosition = Camera.main.ScreenToWorldPoint(Input.mousePosition);
+            Vector3 currentMousePosition = Camera.ScreenToWorldPoint(Input.mousePosition);
             currentMousePosition.z = 0;
 
-            if (Vector3.Distance(panningMouseStart, currentMousePosition) > panningThreshold * Camera.main.orthographicSize)
+            if (Vector3.Distance(panningMouseStart, currentMousePosition) > PanningThreshold * Camera.orthographicSize)
             {
                 isPanning = true;
             }
@@ -70,7 +156,8 @@ public class CameraController : MonoBehaviour
             Vector3 distance = lastFramePosition - currentFramePosition;
             if (distance != Vector3.zero)
             {
-                Camera.main.transform.Translate(distance);
+                Camera.transform.Translate(distance);
+                UpdateOrthographicBounds();
             }
         }
 
@@ -89,44 +176,55 @@ public class CameraController : MonoBehaviour
             Zoom(Input.GetAxis("Mouse ScrollWheel"));
         }
 
-        UpdateCameraBounds();
+        HandleWorldBounds();
     }
 
     private void UpdateCameraZoom()
     {
-        Vector3 oldMousePosition = Camera.main.ScreenToWorldPoint(Input.mousePosition);
+        Vector3 oldMousePosition = Camera.ScreenToWorldPoint(Input.mousePosition);
         oldMousePosition.z = 0;
 
-        if (Camera.main.orthographicSize != zoomTarget)
+        if (Camera.orthographicSize != zoomTarget)
         {
             float target = zoomTarget;
             if (zoomLerp > 0)
             {
-                target = Mathf.Lerp(Camera.main.orthographicSize, zoomTarget, zoomLerp * Time.deltaTime);
+                target = Mathf.Lerp(Camera.orthographicSize, zoomTarget, zoomLerp * Time.deltaTime);
             }
 
-            Camera.main.orthographicSize = Mathf.Clamp(target, 3f, 25f);
+            Camera.orthographicSize = Mathf.Clamp(target, 3f, maximumZoom);
         }
 
-        Vector3 newMousePosition = Camera.main.ScreenToWorldPoint(Input.mousePosition);
+        Vector3 newMousePosition = Camera.ScreenToWorldPoint(Input.mousePosition);
         newMousePosition.z = 0;
 
         Vector3 distance = oldMousePosition - newMousePosition;
-        Camera.main.transform.Translate(distance);
+        Camera.transform.Translate(distance);
     }
 
     private void Zoom(float amount)
     {
-        zoomTarget = Camera.main.orthographicSize - zoomSensitivity * (Camera.main.orthographicSize * amount);
+        zoomTarget = Camera.orthographicSize - zoomSensitivity * (Camera.orthographicSize * amount);
+
+        Zoomed?.Invoke(this, new CameraControllerZoomedEventArgs(this, amount, Mathf.Sign(amount)));
+        UpdateOrthographicBounds();
     }
 
-    private void UpdateCameraBounds()
+    private void HandleWorldBounds()
     {
-        Vector3 oldPosition = Camera.main.transform.position;
+        Vector3 oldPosition = Camera.transform.position;
 
         oldPosition.x = Mathf.Clamp(oldPosition.x, 0, (float)worldController.Width - 1);
         oldPosition.y = Mathf.Clamp(oldPosition.y, 0, (float)worldController.Height - 1);
 
-        Camera.main.transform.position = oldPosition;
+        Camera.transform.position = oldPosition;
+    }
+
+    private void UpdateOrthographicBounds()
+    {
+        float aspect = (float) Screen.width / Screen.height;
+        float height = Camera.orthographicSize * 2;
+        OrthographicBounds = new Bounds(Camera.transform.position, new Vector3(height * aspect, height, 0));
+        FrustrumOrthographicBounds = new Bounds(OrthographicBounds.center, OrthographicBounds.size + new Vector3(2, 2));
     }
 }
