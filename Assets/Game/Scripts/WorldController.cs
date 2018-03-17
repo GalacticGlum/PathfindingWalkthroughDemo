@@ -208,9 +208,14 @@ public class WorldController : MonoBehaviour
             doAutoStepThrough = !doAutoStepThrough;
         }
 
-        if (stepThrough && nextStepTimer <= 0 && (doAutoStepThrough || Input.GetKey(KeyCode.Space)))
+        if (stepThrough && nextStepTimer <= 0 && doAutoStepThrough)
         {
-            NextStep(doAutoStepThrough ? autoStepsPerFrame : 0);
+            NextStep(autoStepsPerFrame);
+        }
+
+        if (Input.GetKey(KeyCode.Space) && !stepThrough)
+        {
+            NextStep();
         }
     }
 

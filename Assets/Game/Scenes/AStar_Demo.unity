@@ -1082,8 +1082,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   cameraController: {fileID: 373551929}
-  width: 10
-  height: 10
+  width: 50
+  height: 50
   stepThrough: 1
   autoStepThrough: 1
   nextStepCooldown: 0
